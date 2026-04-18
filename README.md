@@ -3,246 +3,128 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/RishiBuilds/NoteRoot)](https://goreportcard.com/report/github.com/RishiBuilds/NoteRoot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**Tree-based markdown documentation. No database. No container. One binary.**
+**Tree-based markdown documentation. No database for content. Single binary deployment.**
 
-NoteRoot is a self-hosted docs app for runbooks, internal wikis, and technical notes. Your content lives as plain Markdown files on disk - organized in a real folder tree, editable in any text editor, and deployable in minutes.
-
----
-
-## Table of Contents
-
-- [Why NoteRoot?](#why-noteroot)
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Frontend Development](#frontend-development)
-- [Architecture](#architecture)
-- [Configuration](#configuration)
-- [API Reference](#api-reference)
-- [Deployment (Systemd Example)](#deployment-systemd-example)
-- [Philosophy](#philosophy)
-- [Contributing](#contributing)
-- [License](#license)
+NoteRoot is a high-performance, self-hosted documentation engine designed for developers, homelabs, and internal engineering teams. It treats the local filesystem as the absolute source of truth for your content while layering on an embedded SQLite database for authentication and user permission management, all delivered as a single compiled Go binary.
 
 ---
 
-## Why NoteRoot?
+## Architecture & Tech Stack
 
-Most documentation tools are overbuilt. Confluence needs a team to maintain it. Wiki.js needs a database. DokuWiki needs PHP. You just want a place to keep your runbooks organized.
+NoteRoot is built on a decoupled client-server architecture, bound together during the final build process.
 
-NoteRoot is the answer to one question: _what's the simplest thing that could actually work?_
+### Backend (Go / Gin)
+- **Language**: Go 1.23
+- **Routing**: `gin-gonic/gin` for high-throughput HTTP REST API routing.
+- **Persistence**: `modernc.org/sqlite` (CGO-free embedded SQLite) strictly for user management and auth state. Content is strictly filesystem-bound.
+- **Authentication**: `golang-jwt/jwt/v5` handling stateless JWT issuing and verification.
+- **Utilities**: `gosimple/slug` for URL-safe path generation, `x/crypto/bcrypt` for secure credential hashing.
 
-- **Markdown files on disk** - no database, no lock-in.
-- **Real tree structure** - not a flat list with tags.
-- **Single Go binary** - copy it to a server, run it, done.
-- **Git-friendly by default** - your docs folder is just a folder.
-
----
-
-## Features
-
-- **Tree-structured pages** reflecting your actual folder hierarchy.
-- **On-the-fly rendering** ensures files stay portable and decoupled from the app.
-- **Built-in UI** to create, move, rename, and delete pages seamlessly.
-- **Slug-based routing** provides clean, shareable URLs.
-- **JWT authentication** with admin and editor roles.
-- **Per-page asset management** for images and file attachments.
-- **Simple REST API** for scripting, integrations, and automation.
-- **Zero ops overhead:** No Docker, no Postgres, no Redis required.
+### Frontend (React / Vite)
+- **Framework**: React 19 + TypeScript, bundled with Vite.
+- **Routing & State**: `react-router-dom` for client-side routing, `zustand` for lightweight global state management.
+- **UI & Styling**: **Neo-brutalist Design System** built via TailwindCSS, featuring bold contrast, flat colors, and `framer-motion` for micro-interactions. Accessible base primitives powered by Radix UI.
+- **Markdown Rendering**: `react-markdown` ecosystem (`remark-gfm`, `rehype-highlight`) for GitHub-flavored markdown and syntax highlighting.
 
 ---
 
-## Quick Start
+## Core Systems & Implementation Details
 
-Ensure you have [Go](https://golang.org/dl/) 1.23+ installed on your system.
+### Filesystem Page Store
+NoteRoot intentionally avoids storing documentation content in a relational database. 
+- The `PageStore` interface implemented in `internal/core/tree/` traverses a specified target directory (`--docs`).
+- Directories represent structural nodes; `.md` files act as standard pages, while `index.md` acts as a directory's root content.
+- Page rendering, structural tree generation, and path resolution happen dynamically. Slug collisions are mitigated via backend sequence checking.
 
-### Option 1: Run from Source
+### Authentication & Authorization Flow
+- **Stateless API Layer**: Protected routes use Go middleware to validate `Bearer` JWT tokens embedded in the `Authorization` header.
+- **User Segregation**: The system supports Admin and Editor roles. Read-only endpoints do not inherently require auth if public viewing is enabled, while mutations (POST/PUT/DELETE) enforce rigid JWT checks against the SQLite user table.
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/RishiBuilds/NoteRoot.git
-cd NoteRoot
-
-# 2. Run directly in dev mode
-go run ./cmd/noteroot/main.go
-```
-
-Then open `http://localhost:8080` in your browser. Default credentials: `admin` / `admin`.
-
-### Option 2: Build a Single Binary
-
-To build an optimized, standalone executable for your environment:
-
-```bash
-# Build the binary into the root directory
-go build -o noteroot ./cmd/noteroot
-
-# Run it, pointing it to your docs folder
-./noteroot --docs ./my-docs --port 8080 --jwt-secret "your-secret-key"
-```
+### Embedded SPA Mode
+The typical deployment model compiles the React frontend into static assets (`dist/`), which are then embedded directly into the Go binary using the `embed` package. The Gin router serves static files natively, routing all unrecognized paths to `index.html` to allow `react-router` to take over client side routing.
 
 ---
 
-## Frontend Development
+## Building from Source
 
-The frontend is a React + Vite + TypeScript application located in `ui/noteroot-ui/`.
+Ensure you have [Go 1.23+](https://golang.org/dl/) and Node.js installed.
 
+### 1. Build the Frontend
 ```bash
 cd ui/noteroot-ui
-
-# Install dependencies
 npm install
-
-# Start dev server (proxies API requests to Go backend on :8080)
-npm run dev
-```
-
-> **Note:** The Go backend must be running on port 8080 for the frontend dev server to proxy API and asset requests correctly.
-
-### Building for Production
-
-```bash
-cd ui/noteroot-ui
 npm run build
 ```
+Copy the contents of `ui/noteroot-ui/dist/` into `internal/http/dist/` if you are embedding the UI into the binary.
 
-The built output goes to `ui/noteroot-ui/dist/`. To embed the frontend in the Go binary, copy the build output to `internal/http/dist/` and set the `EmbedFrontend` build flag to `"true"`.
-
----
-
-## Architecture
-
-```
-NoteRoot/
-├── cmd/noteroot/         # Application entrypoint
-├── internal/
-│   ├── core/
-│   │   ├── auth/         # User store (SQLite), auth service (JWT), user service
-│   │   ├── assets/       # Per-page asset management (upload, list, delete)
-│   │   ├── shared/       # Shared utilities and validation errors
-│   │   └── tree/         # Page tree, slug service, filesystem page store
-│   ├── http/
-│   │   ├── api/          # REST API handlers (pages, users, assets, auth)
-│   │   ├── middleware/   # Auth/admin middleware
-│   │   ├── dist/         # Embedded frontend placeholder
-│   │   └── router.go     # Gin router setup
-│   └── noteroot/         # Core orchestration layer
-├── ui/noteroot-ui/       # React + Vite frontend
-├── docs/                 # Default docs storage directory
-├── Dockerfile            # Production Docker image
-└── Makefile              # Build & release automation
+### 2. Build the Backend
+```bash
+# Return to the repo root
+go build -o noteroot ./cmd/noteroot
 ```
 
 ---
 
-## Configuration
+## Development Environment
+
+For local active development, run the backend and frontend separately:
+
+**Start the Go API Server:**
+```bash
+go run ./cmd/noteroot/main.go --port 8080 --jwt-secret "dev-secret" --docs ./test-docs
+```
+
+**Start the Vite Dev Server:**
+```bash
+cd ui/noteroot-ui
+npm run dev
+```
+The Vite dev server proxies all `/api` requests to `localhost:8080`, bypassing CORS issues and ensuring exact environment parity with production.
+
+---
+
+## Configuration Variables
 
 NoteRoot can be configured using command-line flags or environment variables.
 
 | Flag               | Environment Variable     | Default   | Description                                    |
 | ------------------ | ------------------------ | --------- | ---------------------------------------------- |
-| `--docs`           | `NOTEROOT_DOCS`          | `./docs`  | Path to your Markdown directories.             |
-| `--port`           | `NOTEROOT_PORT`          | `8080`    | Port for the HTTP server to listen on.         |
-| `--host`           | `NOTEROOT_HOST`          | `0.0.0.0` | Host interface to bind to.                     |
-| `--admin-password` | `NOTEROOT_ADMIN_PASSWORD`| `admin`   | Initial admin password (first run only).       |
-| `--jwt-secret`     | `NOTEROOT_JWT_SECRET`    | _(empty)_ | Secret for signing auth tokens. **Required for secure auth.** |
+| `--docs`           | `NOTEROOT_DOCS`          | `./docs`  | Target directory for Markdown storage.         |
+| `--port`           | `NOTEROOT_PORT`          | `8080`    | HTTP listener port.                            |
+| `--host`           | `NOTEROOT_HOST`          | `0.0.0.0` | Bind interface.                                |
+| `--admin-password` | `NOTEROOT_ADMIN_PASSWORD`| `admin`   | Seed password for the initial admin user.      |
+| `--jwt-secret`     | `NOTEROOT_JWT_SECRET`    | *runtime* | Cryptographic secret for signing auth tokens.  |
 
 ---
 
-## API Reference
+## API Reference (Internal)
 
-NoteRoot ships with a REST API for automated workflows. All endpoints except auth require a `Bearer` token in the `Authorization` header.
+REST architectural endpoints mapped in `router.go`:
 
-### Authentication
-- `POST /api/auth/login` — Login with `{ identifier, password }`. Returns JWT tokens.
-- `POST /api/auth/refresh-token` — Refresh an expired token with `{ token }`.
+### Auth & User (`/api/auth`, `/api/users`)
+- `POST /api/auth/login` → Validates bcrypt hash, issues short-lived JWT.
+- `GET /api/users` → Returns sanitized user structs (Admin only).
 
-### Pages
-- `GET /api/tree` — Returns the full directory tree structure.
-- `GET /api/pages/:id` — Returns page content and metadata by ID.
-- `GET /api/pages/by-path?path=...` — Returns a page by its URL path.
-- `GET /api/pages/slug-suggestion?title=...&parentID=...` — Suggests a unique slug.
-- `POST /api/pages` — Create a new page with `{ title, slug, parentId? }`.
-- `PUT /api/pages/:id` — Update a page with `{ title, slug, content }`.
-- `DELETE /api/pages/:id?recursive=false` — Delete a page.
-- `PUT /api/pages/:id/move` — Move a page to a new parent with `{ parentId }`.
-- `PUT /api/pages/:id/sort` — Reorder children with `{ orderedIDs: [...] }`.
+### Tree & Pages (`/api/tree`, `/api/pages`)
+- `GET /api/tree` → Recursively generates JSON schema of the doc tree.
+- `GET /api/pages/by-path` → Traverses filesystem to return specific MD payload.
+- `POST /api/pages` → Injects new node into the virtual tree, writes literal `.md` file to disk.
+- `PUT /api/pages/:id/move` → Triggers an OS-level file move/rename, re-indexes virtual tree.
 
-### Users (Admin only)
-- `GET /api/users` — List all users.
-- `POST /api/users` — Create a user with `{ username, email, password, role }`.
-- `PUT /api/users/:id` — Update a user.
-- `DELETE /api/users/:id` — Delete a user (cannot delete admin).
-- `PUT /api/users/me/password` — Change own password with `{ old_password, new_password }`.
-
-### Assets
-- `POST /api/pages/:id/assets` — Upload a file (multipart form, field: `file`).
-- `GET /api/pages/:id/assets` — List assets for a page.
-- `DELETE /api/pages/:id/assets/:name` — Delete an asset.
-
----
-
-## Deployment (Systemd Example)
-
-Because NoteRoot is just a single binary, deploying it on a Linux server is trivial. Here is a basic `systemd` service configuration to keep it running continuously:
-
-1. Move the binary into your PATH:
-
-```bash
-sudo mv noteroot /usr/local/bin/
-```
-
-2. Create a service file:
-
-```bash
-sudo nano /etc/systemd/system/noteroot.service
-```
-
-```ini
-[Unit]
-Description=NoteRoot Documentation Server
-After=network.target
-
-[Service]
-User=www-data
-Group=www-data
-Restart=on-failure
-ExecStart=/usr/local/bin/noteroot --docs /var/www/noteroot-docs --port 8080 --host 127.0.0.1 --jwt-secret "change-me-to-something-secure"
-
-[Install]
-WantedBy=multi-user.target
-```
-
-3. Enable and start the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now noteroot
-```
-
-_(For production environments, you can optionally put NoteRoot behind a reverse proxy like Nginx or Caddy for SSL termination)._
+### Assets (`/api/pages/:id/assets`)
+- Handles `multipart/form-data` uploads, streaming bytes directly to the associated page directory alongside the `.md` file.
 
 ---
 
 ## Philosophy
 
-**Your data is just files.** You can `grep` it, back it up with `rsync`, version it with `git`, and read it without NoteRoot ever running. The app is a lightweight layer on top of the filesystem - not a replacement for it.
-
-**Minimal ops is a feature.** If deploying your docs requires a database migration or a container orchestrator, something has gone wrong. NoteRoot should be runnable on any Linux box in under five minutes.
-
-**Complexity is a cost.** Every dependency, every abstraction, every config option is a thing that can break. NoteRoot aims to be the kind of software you deploy once and forget about.
-
----
-
-## Stay in the Loop
-
-> More updates coming soon.  
-> Watch the repo or drop a star ⭐ if you're curious!
+NoteRoot was built with a strict adherence to operational simplicity:
+1. **No External Dependencies**: Docker, Postgres, Redis, and reverse proxies are strictly optional.
+2. **Text is King**: Standard tools (`git`, `grep`, `rsync`) remain the best ways to interact with text. NoteRoot layers on top of this abstraction, rather than hiding text in a DB BLOB field.
 
 ---
 
 ## Contributing
-
-We welcome issues, ideas, and pull requests! The project is in its early stages and the surface area is small - making it a fantastic time to get involved.
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
@@ -254,4 +136,4 @@ We welcome issues, ideas, and pull requests! The project is in its early stages 
 
 ## License
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+Distributed under the MIT License. See `LICENSE` for more information.

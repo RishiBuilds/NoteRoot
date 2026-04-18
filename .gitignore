@@ -10,7 +10,6 @@
 *.cover
 coverage.*
 bin/
-dist/
 build/
 
 # Go specific
@@ -57,3 +56,14 @@ coverage.html
 *.bak
 *.old
 *.orig
+
+releases/*
+!releases/.gitkeep
+
+dist/*
+!dist/.gitkeep
+
+# data dir
+data/
+
+__debug*

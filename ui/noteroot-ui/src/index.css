@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 224 50% 86%;
+    --secondary-background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --main: 220 80% 73%;
+    --main-foreground: 0 0% 0%;
+    --border: 0 0% 0%;
+    --ring: 0 0% 0%;
+    --overlay: 0 0% 0%;
+
+    --shadow: 4px 4px 0px 0px hsl(var(--border));
+    --border-radius: 5px;
+    --heading-font-weight: 700;
+    --base-font-weight: 500;
+  }
+
+  .dark {
+    --background: 240 20% 16%;
+    --secondary-background: 0 0% 14%;
+    --foreground: 0 0% 93%;
+    --main: 220 80% 73%;
+    --main-foreground: 0 0% 0%;
+    --border: 0 0% 0%;
+    --ring: 0 0% 100%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-base;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+/* Styles for tables within Markdown */
+.prose {
+  @apply max-w-none;
+}
+
+.prose table {
+  @apply w-full border-collapse border-2 border-border;
+}
+
+.prose th,
+.prose td {
+  @apply border-2 border-border px-4 py-2;
+}
+
+.prose tr:nth-child(odd) {
+  @apply bg-secondary-background;
+}
+
+.prose tr:nth-child(even) {
+  @apply bg-background;
+}
+
+.flash-border {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+  transition: outline 0.2s ease-in-out;
+}

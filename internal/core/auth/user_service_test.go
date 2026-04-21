@@ -10,6 +10,7 @@ func setupTestUserService(t *testing.T) *UserService {
 	if err != nil {
 		t.Fatalf("Failed to setup user store: %v", err)
 	}
+	t.Cleanup(func() { store.Close() })
 	return NewUserService(store)
 }
 
@@ -105,6 +106,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 
 func TestUserService_InitDefaultAdmin(t *testing.T) {
 	store, _ := NewUserStore(t.TempDir())
+	t.Cleanup(func() { store.Close() })
 	service := NewUserService(store)
 
 	err := service.InitDefaultAdmin("")

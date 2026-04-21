@@ -292,7 +292,77 @@ func (f *UserStore) GetUserCount() (int, error) {
 	return count, nil
 }
 
+func (f *UserStore) GetUserByUsernameAndPassword(username string, password string) (*User, error) {
+	// Ensure the database is connected
+	err := f.Connect()
+	if err != nil {
+		return nil, err
+	}
+	// Query the user by username and password
+	row := f.db.QueryRow(`
+		SELECT id, username, password, email, role
+		FROM users
+		WHERE username = ? AND password = ?;
+	`, username, password)
 
+	user := &User{}
+	err = row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Role)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
+func (f *UserStore) GetUserByEmailAndPassword(email string, password string) (*User, error) {
+	// Ensure the database is connected
+	err := f.Connect()
+	if err != nil {
+		return nil, err
+	}
+	// Query the user by email and password
+	row := f.db.QueryRow(`
+		SELECT id, username, password, email, role
+		FROM users
+		WHERE email = ? AND password = ?;
+	`, email, password)
+
+	user := &User{}
+	err = row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Role)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
+func (f *UserStore) GetUserByUsernameOrEmailAndPassword(usernameOrEmail string, password string) (*User, error) {
+	// Ensure the database is connected
+	err := f.Connect()
+	if err != nil {
+		return nil, err
+	}
+	// Query the user by username or email and password
+	row := f.db.QueryRow(`
+		SELECT id, username, password, email, role
+		FROM users
+		WHERE (username = ? OR email = ?) AND password = ?;
+	`, usernameOrEmail, usernameOrEmail, password)
+
+	user := &User{}
+	err = row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Role)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return user, nil
+}
 
 func (f *UserStore) mapConstraintViolationToError(err error) error {
 	// Check if the error is a constraint violation

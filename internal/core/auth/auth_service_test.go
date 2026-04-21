@@ -10,6 +10,7 @@ func setupTestAuthService(t *testing.T) *AuthService {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { store.Close() })
 	userService := NewUserService(store)
 
 	// Create test user
